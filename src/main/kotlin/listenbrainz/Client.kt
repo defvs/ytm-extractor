@@ -27,10 +27,13 @@ class Client(private val token: String, private val chunkSize: Int = 200) {
                 .header("Authorization", "Token $token")
                 .body(json.encodeToString(ListenBrainzListens(payload = chunk)))
 
-            println("Chunk $i: response=${httpClient(request).bodyString()}")
+            val response = httpClient(request)
+            println("Chunk $i: response=${response.bodyString()}")
             println("from ${chunk.minOf { it.listenedAt.epochSecond }} to ${chunk.maxOf { it.listenedAt.epochSecond }}")
 
-            Thread.sleep(5000)
+            val timeout = response.header("X-RateLimit-Reset-In")?.toLong()?.times(1000) ?: 5000
+            println("Waiting ${timeout}ms before next request...")
+            Thread.sleep(timeout)
         }
     }
 }
