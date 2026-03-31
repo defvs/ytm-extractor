@@ -4,9 +4,13 @@ import helpers.parseDateTime
 import listenbrainz.ListenBrainzAdditionalInfo
 import listenbrainz.ListenBrainzPayload
 import listenbrainz.ListenBrainzTrackMetadata
+import mapNotNull
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
+import sanitize
 import java.time.Instant
+import java.time.format.DateTimeFormatter
+import kotlin.streams.toList
 
 object YTMHTMLParser {
     data class YouTubeMusicData(
@@ -28,39 +32,53 @@ object YTMHTMLParser {
         )
     }
 
-    fun parse(htmlContent: String): List<YouTubeMusicData> {
+    fun parse(htmlContent: String, dateTimeFormatter: DateTimeFormatter): List<YouTubeMusicData> {
         val document: Document = Jsoup.parse(htmlContent)
-        val youtubeMusicDataList = mutableListOf<YouTubeMusicData>()
-
-        val elements = document.select("div.outer-cell.mdl-cell.mdl-cell--12-col.mdl-shadow--2dp")
-        for (element in elements) {
-            val titleElement = element.selectFirst("p.mdl-typography--title")
-            if (titleElement != null && titleElement.text().contains("YouTube Music")) {
+        
+        return document.select("div.outer-cell.mdl-cell.mdl-cell--12-col.mdl-shadow--2dp")
+            .parallelStream()
+            .filter { element ->
+                val titleElement = element.selectFirst("p.mdl-typography--title")
+                titleElement?.text()?.contains("YouTube Music") ?: false
+            }.mapNotNull { element ->
                 val contentCells = element.select("div.content-cell.mdl-cell--6-col.mdl-typography--body-1")
-                val topElement =
-                    if (contentCells.size == 2) contentCells[0]
-                    else if (contentCells.size == 6) contentCells[0].parent()!!
-                    else continue
+                val topElement = when (contentCells.size) {
+                    2 -> contentCells[0]
+                    6 -> contentCells[0].parent()!!
+                    else -> return@mapNotNull null
+                }
 
-                val videoElement = runCatching { topElement.child(0) }.getOrNull() ?: continue
-                val channelElement = runCatching { topElement.child(2) }.getOrNull() ?: continue
+                val videoElement = runCatching { topElement.child(0) }.onFailure {
+                    System.err.println("Failed to parse video element: $it")
+                }.getOrNull() ?: return@mapNotNull null
+                
+                val channelElement = runCatching { topElement.child(2) }.onFailure {
+                    System.err.println("Failed to parse channel element: $it")
+                }.getOrNull() ?: return@mapNotNull null
+                
                 val dateTime = runCatching {
-                    parseDateTime(
-                        topElement.ownText().trim().removePrefix("Watched ").trim()
-                    )
-                }.getOrNull() ?: continue
+                    val sanitizedDateTimeString = topElement.wholeOwnText().sanitize()
+                        .split("\n")
+                        .last { it.isNotBlank() } // Allow removing "Watched " prefix, support any language
+                        .trim()
+                    parseDateTime(sanitizedDateTimeString, dateTimeFormatter)
+                }.onFailure {
+                    System.err.println("Failed to parse date time: $it")
+                }.getOrNull() ?: return@mapNotNull null
 
-                val channelName = channelElement.text().trim().removeSuffix("- Topic")
-                val youtubeMusicData = YouTubeMusicData(
-                    title = videoElement.text().trim(),
+                val channelName = channelElement.text().sanitize().removeSuffix("- Topic")
+                if (channelName.isBlank()) {
+                    System.err.println("Channel name is blank for title ${videoElement.text()}")
+                    return@mapNotNull null
+                }
+
+                return@mapNotNull YouTubeMusicData(
+                    title = videoElement.text().sanitize(),
                     videoHref = videoElement.attr("href").trim(),
-                    channel = channelName.trim(),
+                    channel = channelName.sanitize(),
                     channelHref = channelElement.attr("href").trim(),
                     dateTime = dateTime
                 )
-                youtubeMusicDataList.add(youtubeMusicData)
-            }
-        }
-        return youtubeMusicDataList
+            }.toList()
     }
 }
