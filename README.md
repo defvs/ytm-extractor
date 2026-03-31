@@ -35,6 +35,14 @@ java -jar ytm-extractor.jar -i "path/to/watch-history.html" -t "listenbrainz tok
 java -jar ytm-extractor.jar -i "path/to/watch-history.html" -t "listenbrainz token" --before 1722791449 --after 1722532249
 ```
 
+### 3c. Changing date format
+
+If you are not from the US, you might have the date time in a slightly different format, this allows you to change it (see [here](https://docs.oracle.com/javase/8/docs/api/java/time/format/DateTimeFormatter.html)).
+The locale is in
+```shell
+java -jar ytm-extractor.jar -i "path/to/watch-history.html" -t "listenbrainz token" --date-format "d MMM yyyy, HH:mm:ss z" --locale 'fr-FR'
+```
+
 ## Building
 
 ```shell

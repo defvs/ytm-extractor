@@ -6,7 +6,9 @@ import listenbrainz.ListenBrainzPayload
 import listenbrainz.ListenBrainzTrackMetadata
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
+import sanitize
 import java.time.Instant
+import java.time.format.DateTimeFormatter
 
 object YTMHTMLParser {
     data class YouTubeMusicData(
@@ -28,7 +30,7 @@ object YTMHTMLParser {
         )
     }
 
-    fun parse(htmlContent: String): List<YouTubeMusicData> {
+    fun parse(htmlContent: String, dateTimeFormatter: DateTimeFormatter): List<YouTubeMusicData> {
         val document: Document = Jsoup.parse(htmlContent)
         val youtubeMusicDataList = mutableListOf<YouTubeMusicData>()
 
@@ -45,9 +47,11 @@ object YTMHTMLParser {
                 val videoElement = runCatching { topElement.child(0) }.getOrNull() ?: continue
                 val channelElement = runCatching { topElement.child(2) }.getOrNull() ?: continue
                 val dateTime = runCatching {
-                    parseDateTime(
-                        topElement.ownText().trim().removePrefix("Watched ").trim()
-                    )
+                    val sanitizedDateTimeString = topElement.wholeOwnText().sanitize()
+                        .split("\n")
+                        .last { it.isNotBlank() } // Allow removing "Watched " prefix, support any language
+                        .trim()
+                    parseDateTime(sanitizedDateTimeString, dateTimeFormatter)
                 }.getOrNull() ?: continue
 
                 val channelName = channelElement.text().trim().removeSuffix("- Topic")
